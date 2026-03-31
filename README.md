@@ -22,6 +22,17 @@ This client uses proxy:
 
 - http://127.0.0.1:5000
 
+## Environment Variables
+
+Create file frontend/.env (or copy from frontend/.env.example):
+
+```env
+REACT_APP_API_URL=http://localhost:5000
+REACT_APP_SOCKET_URL=http://localhost:5000
+```
+
+For production, set these in your hosting dashboard (for example Vercel Project Settings > Environment Variables).
+
 ## Install
 
 From project root:
