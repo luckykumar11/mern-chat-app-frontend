@@ -1,0 +1,24 @@
+.messages {
+  display: flex;
+  flex-direction: column;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+body,
+html {
+  overflow-x: hidden;
+}
+
+/* Three-dot menu — hidden by default, shown on message row hover */
+.msg-menu-btn {
+  opacity: 0 !important;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.message-row:hover .msg-menu-btn {
+  opacity: 1 !important;
+  pointer-events: all;
+}
