@@ -1,7 +1,7 @@
 import { Button } from "@chakra-ui/button";
 import { FormControl, FormLabel } from "@chakra-ui/form-control";
 import { Input, InputGroup, InputRightElement, InputLeftElement } from "@chakra-ui/input";
-import { VStack, Box, IconButton, Text, Divider, HStack } from "@chakra-ui/react";
+import { VStack, Box, IconButton } from "@chakra-ui/react";
 import { useToast } from "@chakra-ui/toast";
 import axios from "axios";
 import { useState } from "react";
@@ -49,7 +49,7 @@ const Signup = ({ onSignupSuccess }) => {
           "Content-type": "application/json",
         },
       };
-      const { data } = await axios.post(
+      await axios.post(
         "/api/user",
         {
           name,
@@ -117,7 +117,7 @@ const Signup = ({ onSignupSuccess }) => {
           setPic(data.url.toString());
           setPicLoading(false);
         })
-        .catch((err) => {
+        .catch(() => {
           setPicLoading(false);
         });
     } else {

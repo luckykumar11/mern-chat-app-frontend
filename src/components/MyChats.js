@@ -3,12 +3,20 @@ import { Box, Stack, Text, Flex, HStack } from "@chakra-ui/layout";
 import { Avatar } from "@chakra-ui/avatar";
 import { useToast } from "@chakra-ui/toast";
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getSender, getSenderFull } from "../config/ChatLogics";
 import ChatLoading from "./ChatLoading";
 import GroupChatModal from "./miscellaneous/GroupChatModal";
-import { Button, IconButton, Badge, useColorModeValue } from "@chakra-ui/react";
+import { IconButton, Badge, useColorModeValue } from "@chakra-ui/react";
 import { ChatState } from "../Context/ChatProvider";
+
+const SOCKET_ENDPOINT =
+  process.env.REACT_APP_SOCKET_URL ||
+  process.env.REACT_APP_API_URL ||
+  "http://localhost:5000";
+const SOCKET_ENABLED =
+  process.env.REACT_APP_ENABLE_SOCKET === "true" ||
+  (process.env.REACT_APP_ENABLE_SOCKET !== "false" && !/vercel\.app/i.test(SOCKET_ENDPOINT));
 
 const MyChats = ({ fetchAgain }) => {
   const [loggedUser, setLoggedUser] = useState();
@@ -17,7 +25,9 @@ const MyChats = ({ fetchAgain }) => {
 
   const toast = useToast();
 
-  const fetchChats = async () => {
+  const fetchChats = useCallback(async () => {
+    if (!user?.token) return;
+
     try {
       const config = {
         headers: {
@@ -37,13 +47,22 @@ const MyChats = ({ fetchAgain }) => {
         position: "bottom-left",
       });
     }
-  };
+  }, [user?.token, setChats, toast]);
 
   useEffect(() => {
     setLoggedUser(JSON.parse(localStorage.getItem("userInfo")));
     fetchChats();
-    // eslint-disable-next-line
-  }, [fetchAgain]);
+  }, [fetchAgain, fetchChats]);
+
+  useEffect(() => {
+    if (SOCKET_ENABLED || !user?.token) return;
+
+    const interval = setInterval(() => {
+      fetchChats();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [user?.token, fetchChats]);
 
   // Dynamic colors
   const containerBg = useColorModeValue("white", "gray.800");

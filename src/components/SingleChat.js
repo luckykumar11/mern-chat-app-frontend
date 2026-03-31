@@ -5,21 +5,25 @@ import { Avatar } from "@chakra-ui/avatar";
 import "./styles.css";
 import { IconButton, Spinner, useToast, useColorModeValue } from "@chakra-ui/react";
 import { getSender, getSenderFull } from "../config/ChatLogics";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import axios from "axios";
-import { ArrowBackIcon, ArrowRightIcon, AttachmentIcon, DeleteIcon, SmallCloseIcon, EditIcon } from "@chakra-ui/icons";
+import { ArrowBackIcon, ArrowRightIcon, AttachmentIcon, DeleteIcon, SmallCloseIcon } from "@chakra-ui/icons";
 import ProfileModal from "./miscellaneous/ProfileModal";
 import ScrollableChat from "./ScrollableChat";
-import Lottie from "react-lottie";
-import animationData from "../animations/typing.json";
 
 import io from "socket.io-client";
 import UpdateGroupChatModal from "./miscellaneous/UpdateGroupChatModal";
 import { ChatState } from "../Context/ChatProvider";
+import { getAblyClient } from "../config/ablyClient";
 const ENDPOINT =
   process.env.REACT_APP_SOCKET_URL ||
   process.env.REACT_APP_API_URL ||
   "http://localhost:5000";
+const isServerlessEndpoint = /vercel\.app/i.test(ENDPOINT);
+const SOCKET_ENABLED =
+  process.env.REACT_APP_ENABLE_SOCKET === "true" ||
+  (process.env.REACT_APP_ENABLE_SOCKET !== "false" && !isServerlessEndpoint);
+const ABLY_ENABLED = Boolean(process.env.REACT_APP_ABLY_KEY);
 var socket;
 
 const SingleChat = ({ fetchAgain, setFetchAgain }) => {
@@ -32,16 +36,10 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
   const hiddenFileInput = useRef(null);
+  const ablyChannelRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
   const toast = useToast();
 
-  const defaultOptions = {
-    loop: true,
-    autoplay: true,
-    animationData: animationData,
-    rendererSettings: {
-      preserveAspectRatio: "xMidYMid slice",
-    },
-  };
   const { selectedChat, setSelectedChat, user, setNotification } =
     ChatState();
 
@@ -74,7 +72,9 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       setMessages(data);
       setLoading(false);
 
-      socket.emit("join chat", selectedChat._id);
+      if (SOCKET_ENABLED && socket) {
+        socket.emit("join chat", selectedChat._id);
+      }
     } catch (error) {
       toast({
         title: "Error Occured!",
@@ -87,7 +87,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   };
 
-  const markCurrentChatAsRead = async (chatId) => {
+  const markCurrentChatAsRead = useCallback(async (chatId) => {
     if (!chatId || !user?.token) return;
 
     try {
@@ -100,7 +100,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     } catch (error) {
       // Ignore read-sync failures to avoid blocking chat operations.
     }
-  };
+  }, [user?.token]);
 
   const handleAttachmentUpload = (e) => {
     const file = e.target.files[0];
@@ -171,7 +171,17 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const sendMessage = async (event) => {
     // Send either by Enter key or by clicking a submit button (if we add one later)
     if ((event.key === "Enter" || event.type === 'click') && (newMessage || attachmentPreview)) {
-      socket.emit("stop typing", selectedChat._id);
+      if (SOCKET_ENABLED && socket) {
+        socket.emit("stop typing", selectedChat._id);
+      }
+      if (ABLY_ENABLED && ablyChannelRef.current && selectedChat?._id) {
+        ablyChannelRef.current.publish("stop-typing", {
+          chatId: selectedChat._id,
+          userId: user._id,
+        }).catch(() => {});
+      }
+      let pendingTempId = null;
+
       try {
         const config = {
           headers: {
@@ -189,19 +199,53 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           return;
         }
 
-        const payload = {
-          content: newMessage,
-          chatId: selectedChat,
-          attachment: attachmentPreview,
+        const contentToSend = newMessage;
+        const attachmentToSend = attachmentPreview;
+        pendingTempId = `temp-${Date.now()}`;
+
+        const optimisticMessage = {
+          _id: pendingTempId,
+          sender: {
+            _id: user._id,
+            name: user.name,
+            pic: user.pic,
+            email: user.email,
+          },
+          content: contentToSend || "",
+          attachment: attachmentToSend || null,
+          chat: selectedChat,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          readBy: [user._id],
         };
 
-        setNewMessage(""); // Clear early for better UX
+        setMessages((prev) => [...prev, optimisticMessage]);
+        setNewMessage("");
         setAttachmentPreview(null);
 
+        const payload = {
+          content: contentToSend,
+          chatId: selectedChat._id,
+          attachment: attachmentToSend,
+        };
+
         const { data } = await axios.post("/api/message", payload, config);
-        socket.emit("new message", data);
-        setMessages([...messages, data]);
+        if (SOCKET_ENABLED && socket) {
+          socket.emit("new message", data);
+        }
+        setMessages((prev) => {
+          const replaced = prev.map((msg) => (msg._id === pendingTempId ? data : msg));
+          const seen = new Set();
+          return replaced.filter((msg) => {
+            if (!msg?._id || seen.has(msg._id)) return false;
+            seen.add(msg._id);
+            return true;
+          });
+        });
       } catch (error) {
+        if (pendingTempId) {
+          setMessages((prev) => prev.filter((msg) => msg._id !== pendingTempId));
+        }
         toast({
           title: "Error Occured!",
           description: "Failed to send the Message",
@@ -215,14 +259,22 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   };
 
   useEffect(() => {
+    if (!SOCKET_ENABLED) return;
+
     socket = io(ENDPOINT);
     socket.emit("setup", user);
     socket.on("connected", () => setSocketConnected(true));
     socket.on("typing", () => setIsTyping(true));
     socket.on("stop typing", () => setIsTyping(false));
 
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+
     // eslint-disable-next-line
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchMessages();
@@ -230,15 +282,36 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   }, [selectedChat]);
 
   useEffect(() => {
+    if (SOCKET_ENABLED || !selectedChat?._id || !user?.token) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const config = {
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+          },
+        };
+
+        const { data } = await axios.get(`/api/message/${selectedChat._id}`, config);
+        setMessages(data);
+      } catch (error) {
+        // Keep polling best-effort in serverless mode.
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [selectedChat?._id, user?.token]);
+
+  useEffect(() => {
     if (!selectedChat?._id) return;
 
     // Mark messages as read for the currently opened chat.
     setNotification((prev) => prev.filter((n) => n.chat?._id !== selectedChat._id));
     markCurrentChatAsRead(selectedChat._id);
-  }, [selectedChat, setNotification]);
+  }, [selectedChat, setNotification, markCurrentChatAsRead]);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!SOCKET_ENABLED || !socket) return;
 
     const handleMessageReceived = (newMessageRecieved) => {
       if (!selectedChat || selectedChat._id !== newMessageRecieved.chat._id) {
@@ -258,24 +331,94 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     return () => {
       socket.off("message recieved", handleMessageReceived);
     };
-  }, [selectedChat, setNotification, setFetchAgain]);
+  }, [selectedChat, setNotification, setFetchAgain, markCurrentChatAsRead]);
+
+  useEffect(() => {
+    if (!ABLY_ENABLED || !selectedChat?._id) return;
+
+    const ablyClient = getAblyClient();
+    if (!ablyClient) return;
+
+    const channel = ablyClient.channels.get(`chat-${selectedChat._id}`);
+    ablyChannelRef.current = channel;
+
+    const handleAblyMessage = (ablyMessage) => {
+      const newMessage = ablyMessage?.data;
+      if (!newMessage?._id) return;
+
+      setMessages((prev) => {
+        const exists = prev.some((m) => m._id === newMessage._id);
+        return exists ? prev : [...prev, newMessage];
+      });
+      markCurrentChatAsRead(selectedChat._id);
+    };
+
+    const handleAblyTyping = (ablyMessage) => {
+      const payload = ablyMessage?.data;
+      if (payload?.chatId !== selectedChat?._id) return;
+      if (!payload?.userId || payload.userId === user?._id) return;
+      setIsTyping(true);
+    };
+
+    const handleAblyStopTyping = (ablyMessage) => {
+      const payload = ablyMessage?.data;
+      if (payload?.chatId !== selectedChat?._id) return;
+      if (!payload?.userId || payload.userId === user?._id) return;
+      setIsTyping(false);
+    };
+
+    channel.subscribe("new-message", handleAblyMessage);
+    channel.subscribe("typing", handleAblyTyping);
+    channel.subscribe("stop-typing", handleAblyStopTyping);
+
+    return () => {
+      channel.unsubscribe("new-message", handleAblyMessage);
+      channel.unsubscribe("typing", handleAblyTyping);
+      channel.unsubscribe("stop-typing", handleAblyStopTyping);
+      ablyChannelRef.current = null;
+    };
+  }, [selectedChat?._id, markCurrentChatAsRead, user?._id]);
+
+  useEffect(() => {
+    setIsTyping(false);
+  }, [selectedChat?._id]);
 
   const typingHandler = (e) => {
     setNewMessage(e.target.value);
 
-    if (!socketConnected) return;
+    if (!SOCKET_ENABLED && !ABLY_ENABLED) return;
+
+    if (SOCKET_ENABLED && (!socketConnected || !socket)) return;
 
     if (!typing) {
       setTyping(true);
-      socket.emit("typing", selectedChat._id);
+      if (SOCKET_ENABLED && socket) {
+        socket.emit("typing", selectedChat._id);
+      }
+      if (ABLY_ENABLED && ablyChannelRef.current && selectedChat?._id) {
+        ablyChannelRef.current.publish("typing", {
+          chatId: selectedChat._id,
+          userId: user._id,
+        }).catch(() => {});
+      }
     }
-    let lastTypingTime = new Date().getTime();
-    var timerLength = 3000;
-    setTimeout(() => {
-      var timeNow = new Date().getTime();
-      var timeDiff = timeNow - lastTypingTime;
-      if (timeDiff >= timerLength && typing) {
-        socket.emit("stop typing", selectedChat._id);
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    const timerLength = 1200;
+    typingTimeoutRef.current = setTimeout(() => {
+      if (typing) {
+        if (SOCKET_ENABLED && socket) {
+          socket.emit("stop typing", selectedChat._id);
+        }
+        if (ABLY_ENABLED && ablyChannelRef.current && selectedChat?._id) {
+          ablyChannelRef.current.publish("stop-typing", {
+            chatId: selectedChat._id,
+            userId: user._id,
+          }).catch(() => {});
+        }
         setTyping(false);
       }
     }, timerLength);
@@ -366,6 +509,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
               <div className="messages" style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none' }}>
                 <ScrollableChat
                   messages={messages}
+                  isTyping={istyping}
                   deleteMessageHandler={deleteMessageHandler}
                   startEditingHandler={(msg) => {
                     setEditingMessage(msg);
@@ -409,18 +553,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                     <Text fontSize="sm" fontWeight="bold">Audio attached</Text>
                   )}
                 </Box>
-              )}
-
-              {istyping ? (
-                <div>
-                  <Lottie
-                    options={defaultOptions}
-                    width={70}
-                    style={{ marginBottom: 15, marginLeft: 0 }}
-                  />
-                </div>
-              ) : (
-                <></>
               )}
 
               <input

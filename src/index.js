@@ -18,6 +18,21 @@ if (apiBaseUrl) {
   axios.defaults.baseURL = apiBaseUrl.replace(/\/+$/, "");
 }
 
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      sessionStorage.setItem("sessionExpired", "true");
+      localStorage.removeItem("userInfo");
+      if (window.location.pathname !== "/") {
+        window.location.href = "/";
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 const theme = extendTheme({ config });
 
 ReactDOM.render(

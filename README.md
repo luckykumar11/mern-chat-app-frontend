@@ -29,9 +29,25 @@ Create file frontend/.env (or copy from frontend/.env.example):
 ```env
 REACT_APP_API_URL=http://localhost:5000
 REACT_APP_SOCKET_URL=http://localhost:5000
+REACT_APP_ENABLE_SOCKET=true
+REACT_APP_ABLY_KEY=your_ably_key
 ```
 
 For production, set these in your hosting dashboard (for example Vercel Project Settings > Environment Variables).
+
+If backend is deployed on Vercel serverless, set:
+
+```env
+REACT_APP_ENABLE_SOCKET=false
+```
+
+This avoids repeated /socket.io polling errors because serverless functions do not maintain persistent Socket.IO connections.
+
+For full realtime on Vercel, configure Ably and set:
+
+```env
+REACT_APP_ABLY_KEY=your_ably_key
+```
 
 ## Install
 

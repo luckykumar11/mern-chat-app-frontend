@@ -9,8 +9,11 @@ import {
   isSameUser,
 } from "../config/ChatLogics";
 import { ChatState } from "../Context/ChatProvider";
+import { getSenderFull } from "../config/ChatLogics";
+import Lottie from "react-lottie";
+import animationData from "../animations/typing.json";
 
-const ScrollableChat = ({ messages, deleteMessageHandler, startEditingHandler }) => {
+const ScrollableChat = ({ messages, deleteMessageHandler, startEditingHandler, isTyping }) => {
   const { user, selectedChat } = ChatState();
 
   const senderNamePalette = useColorModeValue(
@@ -50,7 +53,20 @@ const ScrollableChat = ({ messages, deleteMessageHandler, startEditingHandler })
 
   const userBubbleBg = useColorModeValue("#BEE3F8", "blue.800");
   const otherBubbleBg = useColorModeValue("#B9F5D0", "green.800");
+  const typingBubbleBg = useColorModeValue("gray.100", "gray.700");
   const bubbleTextColor = useColorModeValue("black", "white");
+  const typingOptions = {
+    loop: true,
+    autoplay: true,
+    animationData,
+    rendererSettings: {
+      preserveAspectRatio: "xMidYMid slice",
+    },
+  };
+
+  const typingSender = selectedChat?.isGroupChat
+    ? { name: selectedChat?.chatName || "Typing", pic: "" }
+    : getSenderFull(user, selectedChat?.users || []);
 
   return (
     <ScrollableFeed>
@@ -158,6 +174,36 @@ const ScrollableChat = ({ messages, deleteMessageHandler, startEditingHandler })
             </div>
           );
         })}
+
+      {isTyping && (
+        <div style={{ display: "flex", alignItems: "center", marginTop: "10px" }}>
+          <Tooltip label={typingSender?.name || "Typing"} placement="bottom-start" hasArrow>
+            <Avatar
+              mt="7px"
+              mr={1}
+              size="sm"
+              cursor="default"
+              name={typingSender?.name || "Typing"}
+              src={typingSender?.pic || ""}
+            />
+          </Tooltip>
+
+          <Box
+            style={{
+              backgroundColor: typingBubbleBg,
+              borderRadius: "20px",
+              padding: "2px 10px",
+              maxWidth: "75vw",
+            }}
+          >
+            <Lottie
+              options={typingOptions}
+              width={55}
+              style={{ marginTop: -2, marginBottom: -4, marginLeft: -6 }}
+            />
+          </Box>
+        </div>
+      )}
     </ScrollableFeed>
   );
 };

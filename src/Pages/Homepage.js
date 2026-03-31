@@ -1,6 +1,5 @@
 import {
   Box,
-  Container,
   Tab,
   TabList,
   TabPanel,
@@ -9,6 +8,7 @@ import {
   Text,
   Flex,
   VStack,
+  useToast,
 } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
@@ -17,6 +17,7 @@ import Signup from "../components/Authentication/Signup";
 
 function Homepage() {
   const history = useHistory();
+  const toast = useToast();
   const [tabIndex, setTabIndex] = useState(0);
   const [prefillEmail, setPrefillEmail] = useState("");
 
@@ -24,6 +25,21 @@ function Homepage() {
     const user = JSON.parse(localStorage.getItem("userInfo"));
     if (user) history.push("/chats");
   }, [history]);
+
+  useEffect(() => {
+    const sessionExpired = sessionStorage.getItem("sessionExpired");
+    if (sessionExpired === "true") {
+      toast({
+        title: "Session expired",
+        description: "Please login again.",
+        status: "warning",
+        duration: 4000,
+        isClosable: true,
+        position: "bottom",
+      });
+      sessionStorage.removeItem("sessionExpired");
+    }
+  }, [toast]);
 
   return (
     <Flex minH="100vh" w="100%" direction={{ base: "column", md: "row" }} bg="white">
