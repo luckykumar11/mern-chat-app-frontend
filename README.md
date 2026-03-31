@@ -1,30 +1,18 @@
 # Talk-A-Tive Frontend
 
-<p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Work+Sans&weight=700&size=26&duration=2400&pause=900&color=3B82F6&center=true&vCenter=true&width=860&lines=Talk-A-Tive+Frontend;React+%2B+Chakra+UI+Chat+Client;Realtime+Chat+%7C+Typing+%7C+Notifications" alt="Frontend animated heading" />
-</p>
+React client for Talk-A-Tive chat app.
 
-Frontend client for Talk-A-Tive.
+## Tech Stack
 
-## Stack
-
-- React 17
+- React 17 (CRA)
 - Chakra UI
 - Axios
-- Socket.IO client
-
-## Prerequisites
-
-- Node.js installed
-- Backend running at http://localhost:5000
-
-This client uses proxy:
-
-- http://127.0.0.1:5000
+- Socket.IO client (non-serverless runtime)
+- Ably client (serverless-friendly realtime)
 
 ## Environment Variables
 
-Create file frontend/.env (or copy from frontend/.env.example):
+Create frontend/.env (or copy from frontend/.env.example):
 
 ```env
 REACT_APP_API_URL=http://localhost:5000
@@ -33,82 +21,93 @@ REACT_APP_ENABLE_SOCKET=true
 REACT_APP_ABLY_KEY=your_ably_key
 ```
 
-For production, set these in your hosting dashboard (for example Vercel Project Settings > Environment Variables).
-
-If backend is deployed on Vercel serverless, set:
+Recommended production setup (frontend on Vercel + backend on Vercel):
 
 ```env
+REACT_APP_API_URL=https://your-backend.vercel.app
+REACT_APP_SOCKET_URL=https://your-backend.vercel.app
 REACT_APP_ENABLE_SOCKET=false
-```
-
-This avoids repeated /socket.io polling errors because serverless functions do not maintain persistent Socket.IO connections.
-
-For full realtime on Vercel, configure Ably and set:
-
-```env
 REACT_APP_ABLY_KEY=your_ably_key
 ```
 
+Notes:
+
+- Do not add trailing slash in URLs.
+- If ABLY key includes special characters, keep env value exactly as provided.
+
 ## Install
 
-From project root:
+From repository root:
 
 ```bash
 npm --prefix frontend install --legacy-peer-deps
 ```
 
-Or inside frontend folder:
+Or from frontend directory:
 
 ```bash
 cd frontend
 npm install --legacy-peer-deps
 ```
 
-## Run
+## Run Locally
 
-From project root:
+From repository root:
 
 ```bash
 npm --prefix frontend start
 ```
 
-Or inside frontend folder:
+Or from frontend directory:
 
 ```bash
 cd frontend
 npm start
 ```
 
-Frontend URL:
+Default URL: http://localhost:3000
 
-- http://localhost:3000
-
-## Production Build
+## Build
 
 ```bash
 npm --prefix frontend run build
 ```
 
-## Main UI Features
+## Features
 
-- Login and signup flow
+- Login and signup
 - One-to-one and group chats
-- Real-time messaging + typing indicators
-- Attachments (image/video/audio)
+- Typing indicators inside chat stream
+- Media attachments (image/video/audio)
 - Edit and unsend messages
-- Notification bell + unread badges
-- Per-chat unread counts
-- Group sender names with theme-aware colors
-- Message time labels:
-  - just now
-  - Xm ago (up to 10 minutes)
-  - 12-hour exact time after 10 minutes
+- Notification bell with unread count
+- Per-chat unread badges
+- Unread persistence across refresh
+- Session-expiry auto logout and redirect to login page
 
-## Quick Troubleshooting
+## Realtime Modes
 
-- API requests failing:
-  - ensure backend is running on port 5000
-- Peer dependency install error:
-  - install with --legacy-peer-deps
-- Startup issues:
-  - remove frontend/node_modules and reinstall
+- Local/non-serverless backend:
+  - Set REACT_APP_ENABLE_SOCKET=true to use Socket.IO.
+- Serverless backend (for example Vercel):
+  - Set REACT_APP_ENABLE_SOCKET=false.
+  - Use Ably key for realtime message + notification updates.
+
+## Vercel Setup
+
+- Framework preset: Create React App
+- Build command: npm run build
+- Output directory: build
+- Install command: npm install --legacy-peer-deps
+- Add all REACT_APP_* env vars in Production and Preview scopes.
+
+## Troubleshooting
+
+- Frontend not calling backend:
+  - Verify REACT_APP_API_URL and backend health route.
+- Repeated socket polling errors on Vercel:
+  - Set REACT_APP_ENABLE_SOCKET=false.
+- Realtime delay on Vercel:
+  - Ensure REACT_APP_ABLY_KEY is set and backend has ABLY_API_KEY.
+- Dependency install issues:
+  - Reinstall using --legacy-peer-deps.
